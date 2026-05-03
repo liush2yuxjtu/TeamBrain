@@ -29,6 +29,33 @@ myteambrain init
 claude
 ```
 
+### Complete Initialization Flow
+
+After `npm install -g myteambrain`, follow this steps:
+
+```bash
+# Step 1: Navigate to your project
+cd /path/to/your/project
+
+# Step 2: Initialize MyTeamBrain
+myteambrain init
+
+# Step 3: Verify initialization
+myteambrain status
+
+# Step 4: Configure git remotes (if not already set)
+git remote add gitee https://gitee.com/yourname/myteambrain-memory.git
+git remote add github https://github.com/yourname/myteambrain-memory.git
+
+# Step 5: First push to share with team
+myteambrain push
+
+# Step 6: Start using Claude Code
+claude
+# AI will automatically load relevant memories at session start
+# And extract knowledge when session ends
+```
+
 ### First Time Setup (Team)
 
 ```bash
@@ -145,14 +172,78 @@ $ claude
 
 ### Config Fields
 
+`.myteambrain.json` configuration options:
+
 | Field | Default | Description |
 |-------|---------|-------------|
+| `version` | `"0.1.0"` | Config version |
 | `memoryDir` | `./.myteambrain/knowledge` | Local knowledge storage path |
+| `knowledge_dir` | `~/.myteambrain/knowledge` | Global knowledge base location |
 | `sessionHooks` | `true` | Enable/disable all hooks |
-| `autoPush` | `true` | Auto-push to git remotes |
-| `stopHook.minTurns` | `5` | Min turns before extraction |
-| `sessionStart.topK` | `5` | Max memories to inject |
-| `sessionStart.scorer` | `"bm25"` | Relevance scoring method |
+| `autoPush` | `true` | Auto-push to git remotes after extraction |
+| `stopHook.enabled` | `true` | Enable stop hook |
+| `stopHook.minTurns` | `5` | Min turns before extraction triggers |
+| `sessionStart.enabled` | `true` | Enable session start hook |
+| `sessionStart.topK` | `5` | Max memories to inject at session start |
+| `sessionStart.scorer` | `"bm25"` | Relevance scoring method (bm25/keyword) |
+| `sessionStart.minScore` | `0.1` | Minimum relevance score threshold |
+| `verifierJudge.enabled` | `true` | Enable quality gate |
+| `verifierJudge.rejectOnLowQuality` | `true` | Reject entries with quality score < 2 |
+| `initialized` | - | ISO timestamp of initialization |
+
+---
+
+## CLI Commands
+
+MyTeamBrain provides the following commands:
+
+### init
+```bash
+myteambrain init
+```
+Initialize the knowledge base in the current project. Creates:
+- `.myteambrain.json` config file
+- `~/.myteambrain/knowledge/` directory structure
+- Hooks registration check
+
+### status
+```bash
+myteambrain status
+```
+Show knowledge base statistics:
+- Total files and size
+- Git branch and modified files count
+- Hook installation status
+
+### push
+```bash
+myteambrain push
+```
+Push local knowledge to git remotes (gitee + github).
+
+### pull
+```bash
+myteambrain pull
+```
+Pull latest knowledge from git remotes.
+
+### search
+```bash
+myteambrain search <query>
+```
+Search local knowledge base for entries matching query. Searches last 3 months of entries.
+
+### Full Usage
+```bash
+myteambrain [command] [options]
+
+Commands:
+  init              Initialize knowledge base
+  status            Show knowledge base stats
+  push              Push knowledge to remote
+  pull              Pull knowledge from remote
+  search <text>     Search local knowledge base
+```
 
 ---
 
@@ -250,15 +341,23 @@ All notable changes will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-### [Unreleased]
+### [0.1.0] - MVP Release
 
 #### Added
-- Initial release
-- Stop Hook for session knowledge extraction
-- SessionStart Hook for memory injection
-- Knowledge Store with JSONL storage
-- Verifier Judge quality gate
-- Git Sync for team collaboration
+- **CLI Commands**: `init`, `status`, `push`, `pull`, `search`
+- **Stop Hook**: Session knowledge extraction on Claude Code exit
+- **SessionStart Hook**: Memory injection at session start with BM25 scoring
+- **Knowledge Store**: Append-only JSONL storage with per-month归档
+- **Verifier Judge**: Quality gate with importance/relevance/novelty/safety scoring
+- **Git Sync**: Dual remote sync (gitee + github) for team collaboration
+- **Architecture Documentation**: Complete system design in `docs/architecture.md`
+
+#### Features
+- Minimum turn threshold for extraction (default: 5 turns)
+- Relevance-based memory injection with configurable top-K
+- PII and secrets filtering in Verifier Judge
+- Idempotent hook execution (safe to run multiple times)
+- Atomic JSONL writes with temp file + rename
 
 ---
 

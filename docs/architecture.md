@@ -5,32 +5,32 @@
     ║                         MyTeamBrain Architecture                     ║
     ╠═══════════════════════════════════════════════════════════════════════╣
     ║                                                                        ║
-    ║   ┌─────────────┐                              ┌─────────────┐        ║
-    ║   │   Claude    │                              │   Git Hub   │        ║
-    ║   │    Code    │                              │  Gitee     │        ║
-    ║   │  Session   │                              │  Remote    │        ║
-    ║   └──────┬──────┘                              └──────▲──────┘        ║
-    ║          │                                            │               ║
-    ║          │ Session Start                    Git Push  │               ║
-    ║          ▼                                            │               ║
-    ║   ┌──────────────┐      ┌───────────┐      ┌─────────┴─────┐        ║
-    ║   │  SessionStart│─────►│ Knowledge │◄─────│   Git Sync    │        ║
-    ║   │    Hook      │load  │  Store    │      │   Module      │        ║
-    ║   └──────────────┘      └─────┬─────┘      └───────────────┘        ║
-    ║                               │                                  ║
-    ║                               │ write                            ║
-    ║                               ▼                                  ║
-    ║   ┌──────────────┐      ┌───────────┐      ┌───────────────┐        ║
-    ║   │   Stop Hook  │─────►│ Verifier  │─────►│    JSONL      │        ║
-    ║   │  (extract)   │send  │  Judge    │check │   Files       │        ║
-    ║   └──────────────┘      └───────────┘      └───────────────┘        ║
-    ║                               │                                  ║
-    ║                               │ reject bad entries               ║
-    ║                               ▼                                  ║
-    ║                    ┌──────────────────┐                          ║
-    ║                    │   Rejected       │                          ║
-    ║                    │   Entries Log     │                          ║
-    ║                    └──────────────────┘                          ║
+    ║  Session End Flow          Data Storage           Git Sync             ║
+    ║  ───────────────          ───────────           ────────             ║
+    ║                                                                        ║
+    ║  ┌───────────┐     ┌───────────┐   ┌─────────┐    ┌───────────────┐  ║
+    ║  │ Claude    │────►│ Stop Hook │──►│Verifier │───►│  Knowledge    │  ║
+    ║  │ Code Exit │     │ (extract) │   │ Judge   │    │  Store (JSONL)│  ║
+    ║  └───────────┘     └───────────┘   └────┬────┘    └───────┬───────┘  ║
+    ║                                         │ reject           │          ║
+    ║                                         ▼                  │          ║
+    ║                                  ┌────────────┐           │          ║
+    ║                                  │ Rejected   │           │          ║
+    ║                                  │ Entries    │           │          ║
+    ║                                  └────────────┘           │          ║
+    ║                                                           ▼          ║
+    ║                                              ┌─────────────────────┐ ║
+    ║   ┌───────────┐                              │ Git Sync (gitee +  │ ║
+    ║   │ Claude    │◄─────────────────────────────│ github remotes)     │ ║
+    ║   │ Code      │     Memory Injection        └─────────────────────┘ ║
+    ║   │ Start     │                                                        ║
+    ║   └─────┬─────┘                                                        ║
+    ║         │ Session Start                                                ║
+    ║         ▼                                                              ║
+    ║  ┌────────────────┐   ┌───────────┐   ┌─────────────┐                 ║
+    ║  │ SessionStart   │──►│ Knowledge │◄──│ BM25-lite   │                 ║
+    ║  │ Hook (load)    │   │ Store     │   │ scoring     │                 ║
+    ║  └────────────────┘   └───────────┘   └─────────────┘                 ║
     ║                                                                        ║
     ╚═══════════════════════════════════════════════════════════════════════╝
 ```
@@ -41,11 +41,15 @@
 
 | Component | File | Type | Description |
 |-----------|------|------|-------------|
-| **Stop Hook** | `hooks/stop-hook.js` | Hook | Extracts knowledge on session end |
-| **SessionStart Hook** | `scripts/session-start-hook.js` | Hook | Injects memories on session start |
-| **Knowledge Store** | `scripts/knowledge-store.js` | Module | JSONL append-only storage |
-| **Git Sync** | `scripts/git-sync.js` | Module | Team memory synchronization |
-| **Verifier Judge** | `scripts/verifier-judge.js` | Quality Gate | Validates entries before storage |
+| **Stop Hook** | `hooks/stop-hook.js` | Hook | Entry point; delegates to `scripts/stop-hook.js` |
+| **Stop Hook Core** | `scripts/stop-hook.js` | Hook Logic | Extracts knowledge from transcript on session end |
+| **SessionStart Hook** | `hooks/session-start-hook.js` | Hook | Entry point; delegates to `scripts/session-start-hook.js` |
+| **SessionStart Core** | `scripts/session-start-hook.js` | Hook Logic | Injects memories on session start (BM25 scoring) |
+| **Knowledge Store** | `scripts/knowledge-store.js` | Module | JSONL append-only storage with in-memory index |
+| **Git Sync** | `scripts/git-sync.js` | Module | Team memory sync via gitee + github |
+| **Verifier Judge** | `scripts/verifier-judge.js` | Quality Gate | 4-dimension quality check before storage |
+| **CLI** | `scripts/cli.js` | Interface | Command-line interface for memory operations |
+| **Setup** | `scripts/setup.js` | Installer | Initializes configuration and hooks |
 
 ---
 
@@ -107,52 +111,73 @@
 
 ## Component Details
 
-### Stop Hook (`hooks/stop-hook.js`)
+### Stop Hook (`hooks/stop-hook.js` + `scripts/stop-hook.js`)
 
 **Purpose**: Captures session knowledge on Claude Code exit.
 
+**Flow**:
+1. `hooks/stop-hook.js` — Entry point, registered in `settings.json` as "stop" hook
+2. Delegates to `scripts/stop-hook.js` — Core logic
+3. Reads transcript from `~/.claude/transcripts/`
+4. Extracts key decisions/learnings via LLM
+5. Runs quality check via `verifier-judge.js`
+6. Saves to `knowledge-store.js`
+7. Triggers `git-sync.js` on quality pass
+
 **Input**: Transcript file (`~/.claude/transcripts/current.jsonl`)
 
-**Output**: Markdown session summary to `~/.myteambrain/knowledge/daily/{date}.md`
+**Output**: JSONL entry to `~/.myteambrain/memory/{username}/sessions/`
 
 **Key Features**:
 - Idempotent execution (safe to run multiple times)
 - Minimum turn threshold (skip short sessions)
-- Automatic git push after extraction
+- Automatic git sync after extraction
+- Quality gate before storage
 
 ---
 
-### SessionStart Hook (`scripts/session-start-hook.js`)
+### SessionStart Hook (`hooks/session-start-hook.js` + `scripts/session-start-hook.js`)
 
 **Purpose**: Injects relevant team memories at session start.
 
-**Input**: Team knowledge JSONL files
+**Input**: Reads from two sources:
+- `~/.myteambrain/knowledge/daily/` — markdown summaries from stop-hook
+- `~/.myteambrain/memory/{user}/sessions/` — JSONL entries from knowledge-store
 
 **Scoring Methods**:
-- BM25 (default): Okapi BM25 with weighted field extraction
-- Keyword fallback: When corpus < 50 docs
+- BM25-lite: Token overlap with IDF weighting (default)
+- Keyword fallback: Simple token match when corpus < 50 docs
 
-**Output**: Console output with top-K relevant memories
+**Output**: Console output with top-K relevant memories visible in session
 
 ---
 
 ### Knowledge Store (`scripts/knowledge-store.js`)
 
-**Purpose**: Append-only JSONL storage for team knowledge.
+**Purpose**: Append-only JSONL storage for team knowledge. In-memory index + file system dual write.
+
+**Storage Path**: `~/.myteambrain/memory/{username}/sessions/{date}-{session-id}.jsonl`
 
 **Interface**:
 ```javascript
-// Append new knowledge
-knowledgeStore.append({ author, content, sessionId, tags, importance })
+// Save session memory
+knowledgeStore.save({ username, sessionId, projectPath, content, tags, importance, timestamp })
 
-// Query knowledge
-knowledgeStore.query({ yearMonth, author, tags, search, limit })
+// Search memories
+knowledgeStore.search(query, { username, projectPath, startDate, endDate, tags, limit })
+
+// Get recent memories
+knowledgeStore.getRecent(username, days)
+
+// Get all memories for a project
+knowledgeStore.getByProject(projectPath)
 ```
 
 **Features**:
 - Atomic writes (temp file + rename)
-- Per-month归档
-- Fuzzy search on content
+- In-memory BM25-lite index for fast search
+- Per-user, per-session organization
+- Fuzzy search on content and tags
 
 ---
 
@@ -173,22 +198,25 @@ knowledgeStore.query({ yearMonth, author, tags, search, limit })
 
 ### Verifier Judge (`scripts/verifier-judge.js`)
 
-**Purpose**: Quality gate for knowledge entries.
+**Purpose**: Quality gate for knowledge entries. Third-party judge evaluates session memory quality across 4 dimensions.
 
 **Scoring Dimensions**:
-| Dimension | Range | Reject if |
-|-----------|-------|----------|
-| importance | 1-5 | < 2 |
-| relevance | 1-5 | < 2 |
-| novelty | 1-5 | - |
-| safety | pass/fail | fail |
+| Dimension | Range | Description |
+|-----------|-------|-------------|
+| completeness | 0-100 | Has meaningful task description, decisions, code changes |
+| relevance | 0-100 | Matches project/team keywords (hook, agent, skill, memory, etc.) |
+| reusability | 0-100 | Contains rationale others can learn from |
+| clean | 0-100 | No secrets, PII, debug noise, or stopping noise |
 
-**Safety Check Patterns**:
-- PII (emails, phones, SSN)
-- Secrets (API keys, tokens, passwords)
-- Harmful content
+**Garbage Patterns Rejected**:
+- Secrets/credentials (API keys, tokens, passwords, private keys)
+- PII (SSN patterns)
+- Debug noise (console.log, TODO, DEBUG flags)
+- Stopping noise (sessions with "just stopping" + <100 chars)
 
-**Output**: JSON verdict with scores and reason
+**Pass Threshold**: total_score >= 60 (average of 4 dimensions)
+
+**Output**: JSON verdict with `{ exit_code, scores, total_score, pass, summary, reason }`
 
 ---
 
@@ -241,32 +269,29 @@ async function appendKnowledge(options) {
 ```
 myteambrain/
 ├── hooks/
-│   └── stop-hook.js              # Session stop hook
+│   ├── session-start-hook.js     # SessionStart hook entry point
+│   └── stop-hook.js              # Stop hook entry point
 ├── scripts/
-│   ├── cli.js                    # CLI commands
-│   ├── setup.js                  # Init script
-│   ├── stop-hook.js              # Stop hook (duplicate, legacy)
-│   ├── session-start-hook.js     # Session start hook
+│   ├── cli.js                    # CLI commands (init, status, memory)
+│   ├── setup.js                  # Init script + config generation
+│   ├── stop-hook.js              # Stop hook core logic
+│   ├── session-start-hook.js     # SessionStart hook core logic
 │   ├── knowledge-store.js        # JSONL storage module
 │   ├── git-sync.js               # Git sync module
 │   └── verifier-judge.js         # Quality gate
 ├── docs/
-│   ├── architecture.md           # This file
-│   └── features/
-│       ├── stop-hook.md
-│       ├── session-start-hook.md
-│       ├── knowledge-store.md
-│       └── verifier-judge.md
+│   └── architecture.md           # This file
 ├── README.md
-├── setup.sh
-└── package.json
+├── package.json
+└── setup.sh
 ```
 
 ---
 
 ## Security Considerations
 
-1. **PII Scrubbing**: Verifier Judge rejects entries with PII patterns
-2. **No Secrets**: Knowledge store filters API keys and tokens
-3. **Git Auth**: Use SSH keys or token-based auth for remotes
+1. **No Secrets**: Verifier Judge rejects entries with API keys, tokens, private keys
+2. **PII Filtering**: Rejects entries with SSN patterns and other PII
+3. **Git Auth**: Uses SSH keys or token-based auth for gitee/github remotes
 4. **Local Storage**: Knowledge stored in `~/.myteambrain/` with user-only permissions
+5. **Quality Gate**: Low-quality or garbage entries rejected before storage
