@@ -1,0 +1,12 @@
+{
+  "name": "myteambrain",
+  "version": "0.1.0",
+  "description": "AI Collective Memory for Development Teams",
+  "bin": {
+    "myteambrain": "./cli.js"
+  },
+  "scripts": {
+    "postinstall": "node setup.js"
+  },
+  "dependencies": {}
+}
