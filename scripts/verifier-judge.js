@@ -11,12 +11,12 @@ const fs = require('fs');
 const SAFETY_PATTERNS = [
   // Email addresses
   { pattern: /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, label: 'email' },
-  // Phone numbers — only flag if formatted with separators (not bare digits)
-  { pattern: /(\+?1[-.\s*]?)?\(?\d{3}\)?[-.\s*]\d{3}[-.\s*]\d{4}/g, label: 'phone' },
+  // Phone numbers — only flag if properly formatted with separators
+  { pattern: /(\+?1[-.\s*])?\(?\d{3}\)?[-.\s*]\d{3}[-.\s*]\d{4}/g, label: 'phone' },
   // SSN patterns
   { pattern: /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/g, label: 'ssn' },
-  // API keys / tokens — only flag if contains actual secret keyword + long value
-  { pattern: /\b(secret|password|passwd|pwd|token|apikey|api_key|auth)[_\-]?[a-zA-Z0-9]{16,}/gi, label: 'secret_keyword' },
+  // API keys / tokens — only flag if contains actual secret keyword nearby a long value
+  { pattern: /\b(secret|password|passwd|pwd|token|apikey|api_key|auth)[_\-]?[=:]\s?[a-zA-Z0-9_]{16,}/gi, label: 'secret_keyword' },
   // AWS keys
   { pattern: /\b(AKIA|ABIA|ACCA|ASIA)[0-9A-Z]{16}\b/g, label: 'aws_key' },
   // GitHub tokens
