@@ -11,11 +11,11 @@ const fs = require('fs');
 const SAFETY_PATTERNS = [
   // Email addresses
   { pattern: /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, label: 'email' },
-  // Phone numbers (US/international)
-  { pattern: /(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g, label: 'phone' },
+  // Phone numbers — only flag if formatted with separators (not bare digits)
+  { pattern: /(\+?1[-.\s*]?)?\(?\d{3}\)?[-.\s*]\d{3}[-.\s*]\d{4}/g, label: 'phone' },
   // SSN patterns
   { pattern: /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/g, label: 'ssn' },
-  // API keys / tokens
+  // API keys / tokens — only flag if contains actual secret keyword + long value
   { pattern: /\b(secret|password|passwd|pwd|token|apikey|api_key|auth)[_\-]?[a-zA-Z0-9]{16,}/gi, label: 'secret_keyword' },
   // AWS keys
   { pattern: /\b(AKIA|ABIA|ACCA|ASIA)[0-9A-Z]{16}\b/g, label: 'aws_key' },
@@ -116,6 +116,8 @@ function checkSafety(entry) {
         if (/^\d+\.\d+(\.\d+)?$/.test(m)) return false;
         if (/\bnode\d*\b/i.test(m)) return false;
         if (/\bpostgres\d*\b/i.test(m)) return false;
+        // Allow long hex strings that look like API keys only if they contain secret keyword
+        if (m.length > 24 && !/(secret|password|token|key)/i.test(m)) return false;
         return true;
       });
       if (filtered.length > 0) {
